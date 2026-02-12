@@ -3,8 +3,8 @@ export interface MonthlyData {
   materialCost: number;    // 재료비
   adminLabor: number;      // 판관 인건비
   mfgLabor: number;        // 제조 인건비
-  adminOH: number;         // 판관 관리비
-  mfgOH: number;           // 제조 관리비
+  adminOH: number;         // 판관 경비
+  mfgOH: number;           // 제조 경비
   depreciation: number;    // 감가상각비
 }
 

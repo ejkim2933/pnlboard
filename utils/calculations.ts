@@ -8,7 +8,7 @@ export const calculateMetrics = (data: MonthlyData): CalculatedMetrics => {
   const totalLabor = adminLabor + mfgLabor;
   const totalOH = adminOH + mfgOH;
   
-  // 1. 영업이익 (감가 전): 매출액 - 재료비 - 인건비 합계 - 관리비 합계
+  // 1. 영업이익 (감가 전): 매출액 - (재료비 + 인건비 합계 + 경비 합계)
   const operatingProfit = sales - (materialCost + totalLabor + totalOH);
   const opMargin = sales > 0 ? (operatingProfit / sales) * 100 : 0;
 
@@ -26,7 +26,7 @@ export const calculateMetrics = (data: MonthlyData): CalculatedMetrics => {
   const marginalProfitRatio = sales > 0 ? (marginalProfit / sales) * 100 : 0;
 
   // 5. 손익분기점 (BEP)
-  // 고정비 = 인건비 + 관리비 + 감가상각비
+  // 고정비 = 인건비 + 경비 + 감가상각비
   const fixedCosts = totalLabor + totalOH + depreciation;
   const bep = marginalProfitRatio > 0 ? fixedCosts / (marginalProfitRatio / 100) : 0;
 
@@ -41,6 +41,37 @@ export const calculateMetrics = (data: MonthlyData): CalculatedMetrics => {
     marginalProfitRatio,
     bep
   };
+};
+
+/**
+ * 월별 데이터를 누적(YTD) 데이터로 변환합니다.
+ */
+export const getCumulativeData = (dataList: MonthlyData[]): MonthlyData[] => {
+  const cumulative: MonthlyData[] = [];
+  let runningTotal = {
+    sales: 0,
+    materialCost: 0,
+    adminLabor: 0,
+    mfgLabor: 0,
+    adminOH: 0,
+    mfgOH: 0,
+    depreciation: 0,
+  };
+
+  for (const month of dataList) {
+    runningTotal = {
+      sales: runningTotal.sales + month.sales,
+      materialCost: runningTotal.materialCost + month.materialCost,
+      adminLabor: runningTotal.adminLabor + month.adminLabor,
+      mfgLabor: runningTotal.mfgLabor + month.mfgLabor,
+      adminOH: runningTotal.adminOH + month.adminOH,
+      mfgOH: runningTotal.mfgOH + month.mfgOH,
+      depreciation: runningTotal.depreciation + month.depreciation,
+    };
+    cumulative.push({ ...runningTotal });
+  }
+
+  return cumulative;
 };
 
 export const formatCurrency = (val: number) => {

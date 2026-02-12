@@ -8,15 +8,9 @@ interface DataEntryModalProps {
   onSave: (updatedData: YearData) => void;
 }
 
-interface GridRow {
-  field: keyof MonthlyData;
-  type: DataType;
-  label: string;
-  desc: string;
-}
-
 const DataEntryModal: React.FC<DataEntryModalProps> = ({ isOpen, onClose, yearData, onSave }) => {
   const [localData, setLocalData] = useState<YearData>(yearData);
+  const [activeTab, setActiveTab] = useState<DataType>('actual');
 
   useEffect(() => {
     if (isOpen) {
@@ -24,22 +18,15 @@ const DataEntryModal: React.FC<DataEntryModalProps> = ({ isOpen, onClose, yearDa
     }
   }, [isOpen, yearData]);
 
-  const gridRows: GridRow[] = useMemo(() => [
-    { field: 'sales', type: 'target', label: '매출액', desc: '목표' },
-    { field: 'sales', type: 'actual', label: '매출액', desc: '실제' },
-    { field: 'materialCost', type: 'target', label: '재료비', desc: '목표' },
-    { field: 'materialCost', type: 'actual', label: '재료비', desc: '실제' },
-    { field: 'adminLabor', type: 'target', label: '판관 인건비', desc: '목표' },
-    { field: 'adminLabor', type: 'actual', label: '판관 인건비', desc: '실제' },
-    { field: 'mfgLabor', type: 'target', label: '제조 인건비', desc: '목표' },
-    { field: 'mfgLabor', type: 'actual', label: '제조 인건비', desc: '실제' },
-    { field: 'adminOH', type: 'target', label: '판관 관리비', desc: '목표' },
-    { field: 'adminOH', type: 'actual', label: '판관 관리비', desc: '실제' },
-    { field: 'mfgOH', type: 'target', label: '제조 관리비', desc: '목표' },
-    { field: 'mfgOH', type: 'actual', label: '제조 관리비', desc: '실제' },
-    { field: 'depreciation', type: 'target', label: '감가상각비', desc: '목표' },
-    { field: 'depreciation', type: 'actual', label: '감가상각비', desc: '실제' },
-  ], []);
+  const fields: { key: keyof MonthlyData; label: string }[] = [
+    { key: 'sales', label: '매출액' },
+    { key: 'materialCost', label: '재료비' },
+    { key: 'adminLabor', label: '판관 인건비' },
+    { key: 'mfgLabor', label: '제조 인건비' },
+    { key: 'adminOH', label: '판관 경비' },
+    { key: 'mfgOH', label: '제조 경비' },
+    { key: 'depreciation', label: '감가상각비' },
+  ];
 
   const handleChange = (monthIdx: number, field: keyof MonthlyData, type: DataType, value: string) => {
     const cleaned = value.replace(/[^0-9.-]/g, '');
@@ -54,7 +41,7 @@ const DataEntryModal: React.FC<DataEntryModalProps> = ({ isOpen, onClose, yearDa
     });
   };
 
-  const handlePaste = useCallback((e: React.ClipboardEvent, startMonthIdx: number, startRowIdx: number) => {
+  const handlePaste = useCallback((e: React.ClipboardEvent, startMonthIdx: number, startFieldIdx: number) => {
     e.preventDefault();
     const pasteData = e.clipboardData.getData('text');
     if (!pasteData) return;
@@ -67,70 +54,87 @@ const DataEntryModal: React.FC<DataEntryModalProps> = ({ isOpen, onClose, yearDa
       gridText.forEach((rowText, rOffset) => {
         rowText.forEach((cellText, cOffset) => {
           const mIdx = startMonthIdx + cOffset;
-          const gIdx = startRowIdx + rOffset;
-          if (mIdx < 12 && gIdx < gridRows.length) {
-            const { field, type } = gridRows[gIdx];
+          const fIdx = startFieldIdx + rOffset;
+          if (mIdx < 12 && fIdx < fields.length) {
+            const fieldKey = fields[fIdx].key;
             const num = parseFloat(cellText.replace(/[^0-9.-]/g, '')) || 0;
-            nextData[type][mIdx][field] = num;
+            nextData[activeTab][mIdx][fieldKey] = num;
           }
         });
       });
       return nextData;
     });
-  }, [gridRows]);
+  }, [activeTab, fields]);
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in duration-300">
       <div className="bg-white rounded-[2.5rem] w-full max-w-[95vw] h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
-        <div className="px-10 py-8 flex justify-between items-center bg-slate-50 border-b border-slate-100">
-          <div>
+        
+        {/* Header with Tab Navigation */}
+        <div className="px-10 py-8 bg-slate-50 border-b border-slate-100 flex flex-col gap-6">
+          <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-100">
-                <i className="fas fa-file-invoice-dollar"></i>
+              <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+                <i className="fas fa-database"></i>
               </div>
               <h2 className="text-2xl font-black text-slate-800 tracking-tight">전사 손익 원본 데이터 관리</h2>
             </div>
-            <p className="text-sm text-slate-400 mt-1 font-medium italic">Excel 시트에서 데이터를 복사하여 셀을 클릭한 후 Ctrl+V로 한 번에 입력할 수 있습니다.</p>
+            <button onClick={onClose} className="w-10 h-10 rounded-full hover:bg-slate-200 flex items-center justify-center transition-colors">
+              <i className="fas fa-times text-slate-400 text-xl"></i>
+            </button>
           </div>
-          <button onClick={onClose} className="w-12 h-12 rounded-full hover:bg-slate-200 flex items-center justify-center transition-colors">
-            <i className="fas fa-times text-slate-400 text-xl"></i>
-          </button>
+
+          <div className="flex gap-1 bg-slate-200 p-1 rounded-2xl w-fit self-center">
+            <button 
+              onClick={() => setActiveTab('target')}
+              className={`px-8 py-2.5 rounded-xl font-black text-sm transition-all ${activeTab === 'target' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <i className="fas fa-bullseye mr-2"></i> 목표 (Plan) 설정
+            </button>
+            <button 
+              onClick={() => setActiveTab('actual')}
+              className={`px-8 py-2.5 rounded-xl font-black text-sm transition-all ${activeTab === 'actual' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <i className="fas fa-chart-line mr-2"></i> 실적 (Actual) 입력
+            </button>
+          </div>
+          <p className="text-center text-sm text-slate-400 font-medium -mt-2">
+            {activeTab === 'target' 
+              ? "경영 목표치를 입력합니다. 한번 설정된 목표는 실제 데이터와 비교하는 기준점이 됩니다." 
+              : "매월 발생하는 실제 비용과 매출을 입력합니다. 누적 수치가 아닌 해당 월의 순수 실적을 입력해 주세요."}
+          </p>
         </div>
 
-        <div className="flex-1 overflow-auto bg-slate-100/50 p-8">
+        {/* Spreadsheet Area */}
+        <div className="flex-1 overflow-auto bg-slate-100/30 p-8">
           <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-slate-800">
-                  <th className="sticky left-0 z-30 bg-slate-800 px-6 py-4 text-left text-[10px] font-black text-slate-300 uppercase tracking-widest border-r border-slate-700 min-w-[200px]">항목 / 구분</th>
+                  <th className="sticky left-0 z-30 bg-slate-800 px-6 py-4 text-left text-[10px] font-black text-slate-300 uppercase tracking-widest border-r border-slate-700 min-w-[200px]">데이터 항목</th>
                   {MONTH_NAMES.map(m => (
                     <th key={m} className="px-4 py-4 text-center text-[10px] font-black text-slate-300 border-r border-slate-700 min-w-[120px]">{m}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {gridRows.map((row, rIdx) => (
-                  <tr key={rIdx} className="hover:bg-indigo-50/30 transition-colors group">
-                    <td className="sticky left-0 z-20 bg-white group-hover:bg-indigo-50/50 px-6 py-3 border-r border-slate-200 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
-                      <div className="flex flex-col">
-                        <span className={`text-[9px] font-bold uppercase tracking-tighter ${row.type === 'target' ? 'text-blue-500' : 'text-emerald-600'}`}>
-                          {row.type === 'target' ? 'Plan (목표)' : 'Actual (실제)'}
-                        </span>
-                        <span className="text-sm font-extrabold text-slate-700">{row.label}</span>
-                      </div>
+                {fields.map((field, fIdx) => (
+                  <tr key={field.key} className="hover:bg-slate-50 transition-colors group">
+                    <td className="sticky left-0 z-20 bg-white group-hover:bg-slate-50 px-6 py-4 border-r border-slate-200 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
+                      <span className="text-sm font-extrabold text-slate-700">{field.label}</span>
                     </td>
                     {MONTH_NAMES.map((_, mIdx) => {
-                      const val = localData[row.type][mIdx][row.field];
+                      const val = localData[activeTab][mIdx][field.key];
                       return (
-                        <td key={mIdx} className="p-0 border-r border-slate-100 group-hover:bg-white transition-all">
+                        <td key={mIdx} className="p-0 border-r border-slate-100">
                           <input
                             type="text"
-                            className="w-full h-full px-4 py-3 text-right bg-transparent border-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-sm font-bold text-slate-600 outline-none"
+                            className={`w-full h-full px-4 py-4 text-right bg-transparent border-none focus:ring-2 ${activeTab === 'target' ? 'focus:ring-blue-500' : 'focus:ring-emerald-500'} focus:bg-white text-sm font-bold text-slate-600 outline-none transition-all`}
                             value={val === 0 ? '' : val}
-                            onChange={(e) => handleChange(mIdx, row.field, row.type, e.target.value)}
-                            onPaste={(e) => handlePaste(e, mIdx, rIdx)}
+                            onChange={(e) => handleChange(mIdx, field.key, activeTab, e.target.value)}
+                            onPaste={(e) => handlePaste(e, mIdx, fIdx)}
                             placeholder="0"
                           />
                         </td>
@@ -143,15 +147,18 @@ const DataEntryModal: React.FC<DataEntryModalProps> = ({ isOpen, onClose, yearDa
           </div>
         </div>
 
+        {/* Footer */}
         <div className="px-10 py-6 bg-white border-t border-slate-100 flex justify-between items-center">
-          <div className="flex gap-4">
-             <div className="flex items-center gap-2"><div className="w-3 h-3 rounded bg-blue-500"></div><span className="text-[11px] font-bold text-slate-500">목표</span></div>
-             <div className="flex items-center gap-2"><div className="w-3 h-3 rounded bg-emerald-500"></div><span className="text-[11px] font-bold text-slate-500">실제</span></div>
+          <div className="flex items-center gap-4 text-xs font-bold text-slate-400">
+            <span className="flex items-center gap-1"><i className="fas fa-info-circle"></i> 탭(Tab) 구분된 엑셀 데이터를 복사하여 붙여넣을 수 있습니다.</span>
           </div>
           <div className="flex gap-3">
             <button onClick={onClose} className="px-6 py-3 rounded-2xl font-bold text-slate-500 hover:bg-slate-100 transition-all text-sm">취소</button>
-            <button onClick={() => { onSave(localData); onClose(); }} className="px-10 py-3 rounded-2xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all active:scale-95 text-sm flex items-center gap-2">
-              <i className="fas fa-check-circle"></i> 대시보드 업데이트 및 저장
+            <button 
+              onClick={() => { onSave(localData); onClose(); }} 
+              className={`px-10 py-3 rounded-2xl text-white font-bold shadow-lg transition-all active:scale-95 text-sm flex items-center gap-2 ${activeTab === 'target' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-100' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100'}`}
+            >
+              <i className="fas fa-save"></i> 전체 데이터 저장 및 반영
             </button>
           </div>
         </div>

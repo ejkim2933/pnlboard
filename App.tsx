@@ -6,7 +6,7 @@ import {
 import { 
   YearData, INITIAL_MONTHLY_DATA, MONTH_NAMES, CalculatedMetrics 
 } from './types';
-import { calculateMetrics, formatCurrency, formatPercent } from './utils/calculations';
+import { calculateMetrics, formatCurrency, formatPercent, getCumulativeData } from './utils/calculations';
 import SummaryCard from './components/SummaryCard';
 import DataEntryModal from './components/DataEntryModal';
 
@@ -29,28 +29,33 @@ const App: React.FC = () => {
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'monthly' | 'cumulative'>('monthly');
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(yearData));
   }, [yearData]);
 
+  // 현재 뷰 모드에 따른 시각화 데이터 생성
   const dashboardData = useMemo(() => {
+    const targetBase = viewMode === 'cumulative' ? getCumulativeData(yearData.target) : yearData.target;
+    const actualBase = viewMode === 'cumulative' ? getCumulativeData(yearData.actual) : yearData.actual;
+
     return MONTH_NAMES.map((name, idx) => {
-      const targetMetrics = calculateMetrics(yearData.target[idx]);
-      const actualMetrics = calculateMetrics(yearData.actual[idx]);
+      const targetMetrics = calculateMetrics(targetBase[idx]);
+      const actualMetrics = calculateMetrics(actualBase[idx]);
 
       return {
         name,
-        targetSales: yearData.target[idx].sales,
-        actualSales: yearData.actual[idx].sales,
+        targetSales: targetBase[idx].sales,
+        actualSales: actualBase[idx].sales,
         actualBEP: actualMetrics.bep,
         targetBEP: targetMetrics.bep,
         ...actualMetrics,
       };
     });
-  }, [yearData]);
+  }, [yearData, viewMode]);
 
-  // Fix: totalActual now returns an object that includes base data (sales) as well as calculated metrics.
+  // 상단 요약 카드는 항상 누적(YTD) 전체 합계를 기준으로 표시
   const totalActual = useMemo(() => {
     const sum = yearData.actual.reduce((acc, curr) => ({
       sales: acc.sales + curr.sales,
@@ -80,43 +85,60 @@ const App: React.FC = () => {
             <p className="text-[10px] text-indigo-600 font-black uppercase tracking-[0.2em]">Management & Performance Insight</p>
           </div>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-2xl font-black text-sm flex items-center gap-3 transition-all active:scale-95 shadow-xl shadow-indigo-100"
-        >
-          <i className="fas fa-edit"></i>
-          데이터 통합 관리
-        </button>
+
+        <div className="flex items-center gap-6">
+          <div className="flex bg-slate-200/50 p-1.5 rounded-2xl shadow-inner border border-slate-100">
+            <button 
+              onClick={() => setViewMode('monthly')}
+              className={`px-6 py-2 rounded-xl text-xs font-black transition-all ${viewMode === 'monthly' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-indigo-400'}`}
+            >
+              당월 실적 (Monthly)
+            </button>
+            <button 
+              onClick={() => setViewMode('cumulative')}
+              className={`px-6 py-2 rounded-xl text-xs font-black transition-all ${viewMode === 'cumulative' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-indigo-400'}`}
+            >
+              누적 실적 (YTD)
+            </button>
+          </div>
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3.5 rounded-2xl font-black text-sm flex items-center gap-3 transition-all active:scale-95 shadow-xl shadow-indigo-100"
+          >
+            <i className="fas fa-edit"></i>
+            데이터 통합 관리
+          </button>
+        </div>
       </header>
 
       <main className="max-w-[1600px] mx-auto w-full px-10 py-10 space-y-10 flex-1">
-        {/* KPI Cards */}
+        {/* KPI Cards (Always YTD Context) */}
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <SummaryCard 
-            title="누적 매출액 (실제)" 
+            title="연간 누적 매출 (실제)" 
             value={`${formatCurrency(totalActual.sales)}원`}
-            subValue="현재까지 확정된 총 매출"
+            subValue="현재까지 확정된 총 누계 매출"
             icon="fa-coins"
             color="bg-blue-600"
           />
           <SummaryCard 
-            title="영업이익 (감가 전)" 
+            title="누적 영업이익 (감가전)" 
             value={`${formatCurrency(totalActual.operatingProfit)}원`}
-            subValue={`이익률: ${formatPercent(totalActual.opMargin)}`}
+            subValue={`누적 이익률: ${formatPercent(totalActual.opMargin)}`}
             icon="fa-bolt"
             color="bg-emerald-500"
           />
           <SummaryCard 
-            title="감가 반영 영업이익" 
+            title="감가 반영 누적 이익" 
             value={`${formatCurrency(totalActual.opInclDepr)}원`}
-            subValue={`반영 이익률: ${formatPercent(totalActual.opMarginInclDepr)}`}
+            subValue={`누적 반영 이익률: ${formatPercent(totalActual.opMarginInclDepr)}`}
             icon="fa-calculator"
             color="bg-indigo-600"
           />
           <SummaryCard 
-            title="평균 손익분기점 (BEP)" 
+            title="손익분기점 (YTD BEP)" 
             value={`${formatCurrency(totalActual.bep)}원`}
-            subValue="누적 고정비 회수 필요 매출"
+            subValue="현재 누적 비용 회수 소요 매출"
             icon="fa-scale-balanced"
             color="bg-rose-500"
           />
@@ -126,12 +148,21 @@ const App: React.FC = () => {
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
           {/* Main Chart: Sales vs BEP */}
           <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col">
-            <div className="mb-8">
-              <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
-                <span className="w-1.5 h-6 bg-blue-500 rounded-full"></span>
-                매출 목표 vs 실적 및 손익분기 추이
-              </h3>
-              <p className="text-sm text-slate-400 font-medium mt-1 ml-4">막대는 매출 현황을, 붉은 선은 손익을 넘기기 위해 필요한 매출(BEP)을 의미합니다.</p>
+            <div className="mb-8 flex justify-between items-start">
+              <div>
+                <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
+                  <span className="w-1.5 h-6 bg-blue-500 rounded-full"></span>
+                  매출 목표 vs 실적 및 손익분기 ({viewMode === 'monthly' ? '월별' : '누적'})
+                </h3>
+                <p className="text-sm text-slate-400 font-medium mt-1 ml-4">
+                  {viewMode === 'monthly' 
+                    ? "해당 월의 개별 실적과 목표를 비교합니다." 
+                    : "1월부터 해당 월까지의 누적 실적과 목표를 비교합니다."}
+                </p>
+              </div>
+              <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${viewMode === 'monthly' ? 'bg-indigo-50 text-indigo-500' : 'bg-emerald-50 text-emerald-500'}`}>
+                {viewMode} View
+              </span>
             </div>
             <div className="h-[400px] w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -161,9 +192,9 @@ const App: React.FC = () => {
             <div className="mb-8">
               <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
                 <span className="w-1.5 h-6 bg-emerald-500 rounded-full"></span>
-                영업이익 및 감가 반영 수익성 비교
+                영업이익 및 수익성 추이 ({viewMode === 'monthly' ? '월별' : '누적'})
               </h3>
-              <p className="text-sm text-slate-400 font-medium mt-1 ml-4">순수 운영 수익과 감가상각비를 반영한 최종 수익의 차이를 확인합니다.</p>
+              <p className="text-sm text-slate-400 font-medium mt-1 ml-4">순수 운영 수익과 감가상각비를 반영한 최종 수익 구조를 시각화합니다.</p>
             </div>
             <div className="h-[400px] w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -195,11 +226,15 @@ const App: React.FC = () => {
         <section className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
           <div className="px-10 py-8 border-b border-slate-50 bg-slate-50/30 flex justify-between items-end">
             <div>
-              <h3 className="text-xl font-black text-slate-800">월별 상세 경영 지표 (실적 기준)</h3>
-              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Monthly Performance Deep-dive</p>
+              <h3 className="text-xl font-black text-slate-800">상세 경영 지표 현황 ({viewMode === 'monthly' ? '월별' : '누적'})</h3>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+                {viewMode === 'monthly' ? 'Monthly Segment Analysis' : 'Year-To-Date Cumulative Analysis'}
+              </p>
             </div>
             <div className="text-right">
-                <span className="text-[10px] font-black text-slate-300 bg-slate-100 px-3 py-1 rounded-full uppercase tracking-tighter">Automatic Calculation System</span>
+                <span className="text-[10px] font-black text-slate-400 bg-white border border-slate-200 px-4 py-2 rounded-xl shadow-sm">
+                  {viewMode === 'monthly' ? '각 월의 독립적인 수치입니다' : '1월부터 누적 합산된 수치입니다'}
+                </span>
             </div>
           </div>
           <div className="overflow-x-auto">
