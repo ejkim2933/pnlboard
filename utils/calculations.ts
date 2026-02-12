@@ -81,6 +81,14 @@ export const formatCurrency = (val: number) => {
   }).format(val);
 };
 
+export const formatMillions = (val: number) => {
+  return new Intl.NumberFormat('ko-KR', {
+    style: 'decimal',
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 1,
+  }).format(val / 1000000);
+};
+
 export const formatPercent = (val: number) => {
   return val.toFixed(1) + '%';
 };

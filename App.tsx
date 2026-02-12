@@ -6,7 +6,7 @@ import {
 import { 
   YearData, INITIAL_MONTHLY_DATA, MONTH_NAMES, CalculatedMetrics 
 } from './types';
-import { calculateMetrics, formatCurrency, formatPercent, getCumulativeData } from './utils/calculations';
+import { calculateMetrics, formatCurrency, formatPercent, getCumulativeData, formatMillions } from './utils/calculations';
 import SummaryCard from './components/SummaryCard';
 import DataEntryModal from './components/DataEntryModal';
 
@@ -30,17 +30,25 @@ const App: React.FC = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'monthly' | 'cumulative'>('monthly');
+  const [displayPeriod, setDisplayPeriod] = useState<'1H' | '2H' | 'Full'>('1H');
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(yearData));
   }, [yearData]);
 
-  // 현재 뷰 모드에 따른 시각화 데이터 생성
+  // 현재 조회 기간에 해당하는 인덱스 범위 계산
+  const periodRange = useMemo(() => {
+    if (displayPeriod === '1H') return { start: 0, end: 6 };
+    if (displayPeriod === '2H') return { start: 6, end: 12 };
+    return { start: 0, end: 12 };
+  }, [displayPeriod]);
+
+  // 현재 뷰 모드 및 조회 기간에 따른 시각화 데이터 생성
   const dashboardData = useMemo(() => {
     const targetBase = viewMode === 'cumulative' ? getCumulativeData(yearData.target) : yearData.target;
     const actualBase = viewMode === 'cumulative' ? getCumulativeData(yearData.actual) : yearData.actual;
 
-    return MONTH_NAMES.map((name, idx) => {
+    const fullData = MONTH_NAMES.map((name, idx) => {
       const targetMetrics = calculateMetrics(targetBase[idx]);
       const actualMetrics = calculateMetrics(actualBase[idx]);
 
@@ -53,7 +61,9 @@ const App: React.FC = () => {
         ...actualMetrics,
       };
     });
-  }, [yearData, viewMode]);
+
+    return fullData.slice(periodRange.start, periodRange.end);
+  }, [yearData, viewMode, periodRange]);
 
   // 상단 요약 카드는 항상 누적(YTD) 전체 합계를 기준으로 표시
   const totalActual = useMemo(() => {
@@ -86,21 +96,44 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4">
+          {/* 조회 구간 필터 */}
+          <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 shadow-inner">
+            <button 
+              onClick={() => setDisplayPeriod('1H')}
+              className={`px-4 py-2 rounded-xl text-[11px] font-black transition-all ${displayPeriod === '1H' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              상반기 (1H)
+            </button>
+            <button 
+              onClick={() => setDisplayPeriod('2H')}
+              className={`px-4 py-2 rounded-xl text-[11px] font-black transition-all ${displayPeriod === '2H' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              하반기 (2H)
+            </button>
+            <button 
+              onClick={() => setDisplayPeriod('Full')}
+              className={`px-4 py-2 rounded-xl text-[11px] font-black transition-all ${displayPeriod === 'Full' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              전체 (Full)
+            </button>
+          </div>
+
           <div className="flex bg-slate-200/50 p-1.5 rounded-2xl shadow-inner border border-slate-100">
             <button 
               onClick={() => setViewMode('monthly')}
               className={`px-6 py-2 rounded-xl text-xs font-black transition-all ${viewMode === 'monthly' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-indigo-400'}`}
             >
-              당월 실적 (Monthly)
+              당월 실적
             </button>
             <button 
               onClick={() => setViewMode('cumulative')}
               className={`px-6 py-2 rounded-xl text-xs font-black transition-all ${viewMode === 'cumulative' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-indigo-400'}`}
             >
-              누적 실적 (YTD)
+              누적 실적
             </button>
           </div>
+
           <button 
             onClick={() => setIsModalOpen(true)}
             className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3.5 rounded-2xl font-black text-sm flex items-center gap-3 transition-all active:scale-95 shadow-xl shadow-indigo-100"
@@ -116,29 +149,29 @@ const App: React.FC = () => {
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <SummaryCard 
             title="연간 누적 매출 (실제)" 
-            value={`${formatCurrency(totalActual.sales)}원`}
-            subValue="현재까지 확정된 총 누계 매출"
+            value={`${formatMillions(totalActual.sales)}`}
+            subValue="단위: 백만원"
             icon="fa-coins"
             color="bg-blue-600"
           />
           <SummaryCard 
             title="누적 영업이익 (감가전)" 
-            value={`${formatCurrency(totalActual.operatingProfit)}원`}
-            subValue={`누적 이익률: ${formatPercent(totalActual.opMargin)}`}
+            value={`${formatMillions(totalActual.operatingProfit)}`}
+            subValue={`이익률: ${formatPercent(totalActual.opMargin)} (백만원)`}
             icon="fa-bolt"
             color="bg-emerald-500"
           />
           <SummaryCard 
             title="감가 반영 누적 이익" 
-            value={`${formatCurrency(totalActual.opInclDepr)}원`}
-            subValue={`누적 반영 이익률: ${formatPercent(totalActual.opMarginInclDepr)}`}
+            value={`${formatMillions(totalActual.opInclDepr)}`}
+            subValue={`반영 이익률: ${formatPercent(totalActual.opMarginInclDepr)} (백만원)`}
             icon="fa-calculator"
             color="bg-indigo-600"
           />
           <SummaryCard 
             title="손익분기점 (YTD BEP)" 
-            value={`${formatCurrency(totalActual.bep)}원`}
-            subValue="현재 누적 비용 회수 소요 매출"
+            value={`${formatMillions(totalActual.bep)}`}
+            subValue="회수 소요 매출 (단위: 백만원)"
             icon="fa-scale-balanced"
             color="bg-rose-500"
           />
@@ -154,10 +187,8 @@ const App: React.FC = () => {
                   <span className="w-1.5 h-6 bg-blue-500 rounded-full"></span>
                   매출 목표 vs 실적 및 손익분기 ({viewMode === 'monthly' ? '월별' : '누적'})
                 </h3>
-                <p className="text-sm text-slate-400 font-medium mt-1 ml-4">
-                  {viewMode === 'monthly' 
-                    ? "해당 월의 개별 실적과 목표를 비교합니다." 
-                    : "1월부터 해당 월까지의 누적 실적과 목표를 비교합니다."}
+                <p className="text-sm text-slate-400 font-medium mt-1 ml-4 text-xs">
+                  구간: {displayPeriod === '1H' ? '상반기 (1-6월)' : displayPeriod === '2H' ? '하반기 (7-12월)' : '전체 (1-12월)'} | 단위: 백만원
                 </p>
               </div>
               <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${viewMode === 'monthly' ? 'bg-indigo-50 text-indigo-500' : 'bg-emerald-50 text-emerald-500'}`}>
@@ -169,10 +200,10 @@ const App: React.FC = () => {
                 <ComposedChart data={dashboardData} margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11, fontWeight: 700}} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11}} tickFormatter={(val) => val >= 10000 ? `${(val/10000).toLocaleString()}만` : val} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11}} tickFormatter={(val) => formatMillions(val)} />
                   <Tooltip 
                     contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', padding: '16px'}}
-                    formatter={(val: number) => formatCurrency(val) + '원'}
+                    formatter={(val: number) => formatMillions(val) + ' 백만원'}
                   />
                   <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{paddingBottom: '30px'}} />
                   <Bar dataKey="targetSales" name="목표 매출" fill="#e2e8f0" radius={[10, 10, 0, 0]} barSize={20} />
@@ -194,7 +225,9 @@ const App: React.FC = () => {
                 <span className="w-1.5 h-6 bg-emerald-500 rounded-full"></span>
                 영업이익 및 수익성 추이 ({viewMode === 'monthly' ? '월별' : '누적'})
               </h3>
-              <p className="text-sm text-slate-400 font-medium mt-1 ml-4">순수 운영 수익과 감가상각비를 반영한 최종 수익 구조를 시각화합니다.</p>
+              <p className="text-sm text-slate-400 font-medium mt-1 ml-4 text-xs">
+                구간: {displayPeriod === '1H' ? '상반기 (1-6월)' : displayPeriod === '2H' ? '하반기 (7-12월)' : '전체 (1-12월)'} | 단위: 백만원
+              </p>
             </div>
             <div className="h-[400px] w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -211,8 +244,8 @@ const App: React.FC = () => {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11, fontWeight: 700}} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11}} />
-                  <Tooltip contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)'}} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11}} tickFormatter={(val) => formatMillions(val)} />
+                  <Tooltip contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)'}} formatter={(val: number) => formatMillions(val) + ' 백만원'} />
                   <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{paddingBottom: '30px'}} />
                   <Area type="monotone" dataKey="operatingProfit" name="영업이익 (감가전)" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorOP)" />
                   <Area type="monotone" dataKey="opInclDepr" name="감가 반영 이익" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorDepr)" />
@@ -228,7 +261,7 @@ const App: React.FC = () => {
             <div>
               <h3 className="text-xl font-black text-slate-800">상세 경영 지표 현황 ({viewMode === 'monthly' ? '월별' : '누적'})</h3>
               <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
-                {viewMode === 'monthly' ? 'Monthly Segment Analysis' : 'Year-To-Date Cumulative Analysis'}
+                구간: {displayPeriod === '1H' ? '상반기' : displayPeriod === '2H' ? '하반기' : '전체'} | 단위: 백만원 / %
               </p>
             </div>
             <div className="text-right">
@@ -242,7 +275,9 @@ const App: React.FC = () => {
               <thead>
                 <tr className="bg-white text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
                   <th className="px-10 py-6 sticky left-0 bg-white z-10 w-[240px] shadow-[1px_0_0_#f1f5f9]">구분 지표</th>
-                  {MONTH_NAMES.map(m => <th key={m} className="px-6 py-6 text-right">{m}</th>)}
+                  {MONTH_NAMES.slice(periodRange.start, periodRange.end).map(m => (
+                    <th key={m} className="px-6 py-6 text-right">{m}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -266,7 +301,7 @@ const App: React.FC = () => {
                       const isNegative = val < 0;
                       return (
                         <td key={dIdx} className={`px-6 py-5 text-right whitespace-nowrap text-sm ${isNegative ? 'text-rose-500 font-bold' : row.color}`}>
-                          {row.isPct ? formatPercent(val) : formatCurrency(val)}
+                          {row.isPct ? formatPercent(val) : formatMillions(val)}
                         </td>
                       );
                     })}
