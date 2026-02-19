@@ -12,7 +12,6 @@ import DataEntryModal from './components/DataEntryModal';
 
 const STORAGE_KEY = 'pl_dashboard_pro_v2';
 
-// 데이터 압축을 위한 유틸리티
 const encodeData = (data: YearData): string => {
   const simplify = (list: MonthlyData[]) => list.map(m => [
     m.sales, m.materialCost, m.adminLabor, m.mfgLabor, m.adminOH, m.mfgOH, m.depreciation
@@ -86,7 +85,6 @@ const App: React.FC = () => {
     return { start: 0, end: 12 };
   }, [displayPeriod]);
 
-  // 메인 차트 및 테이블용 데이터
   const dashboardData = useMemo(() => {
     const targetBase = viewMode === 'cumulative' ? getCumulativeData(yearData.target) : yearData.target;
     const actualBase = viewMode === 'cumulative' ? getCumulativeData(yearData.actual) : yearData.actual;
@@ -94,7 +92,6 @@ const App: React.FC = () => {
     const fullData = MONTH_NAMES.map((name, idx) => {
       const targetMetrics = calculateMetrics(targetBase[idx]);
       const actualMetrics = calculateMetrics(actualBase[idx]);
-
       return {
         name,
         targetSales: targetBase[idx].sales,
@@ -104,11 +101,9 @@ const App: React.FC = () => {
         ...actualMetrics,
       };
     });
-
     return fullData.slice(periodRange.start, periodRange.end);
   }, [yearData, viewMode, periodRange]);
 
-  // 상단 요약 배너용 데이터
   const summaryMetrics = useMemo(() => {
     if (viewMode === 'cumulative') {
       const ytdData = getCumulativeData(yearData.actual);
@@ -116,7 +111,6 @@ const App: React.FC = () => {
       const lastMonthYtd = ytdData[lastMonthIdx];
       return { ...lastMonthYtd, ...calculateMetrics(lastMonthYtd) };
     }
-
     const relevantActual = yearData.actual.slice(periodRange.start, periodRange.end);
     const sum = relevantActual.reduce((acc, curr) => ({
       sales: acc.sales + curr.sales,
@@ -127,7 +121,6 @@ const App: React.FC = () => {
       mfgOH: acc.mfgOH + curr.mfgOH,
       depreciation: acc.depreciation + curr.depreciation,
     }), { ...INITIAL_MONTHLY_DATA });
-    
     return { ...sum, ...calculateMetrics(sum) };
   }, [yearData.actual, viewMode, periodRange]);
 
@@ -153,15 +146,13 @@ const App: React.FC = () => {
 
         <div className="flex items-center gap-4">
           {!isSharedView && (
-            <div className="relative mr-2">
-              <button 
-                onClick={handleShare} 
-                className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-xs transition-all shadow-sm ${copySuccess ? 'bg-emerald-500 text-white' : 'bg-white text-indigo-600 border border-slate-200 hover:bg-slate-50'}`}
-              >
-                <i className={`fas ${copySuccess ? 'fa-check' : 'fa-share-nodes'}`}></i>
-                {copySuccess ? '복사 완료!' : '대시보드 공유하기'}
-              </button>
-            </div>
+            <button 
+              onClick={handleShare} 
+              className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-xs transition-all shadow-sm ${copySuccess ? 'bg-emerald-500 text-white' : 'bg-white text-indigo-600 border border-slate-200 hover:bg-slate-50'}`}
+            >
+              <i className={`fas ${copySuccess ? 'fa-check' : 'fa-share-nodes'}`}></i>
+              {copySuccess ? '공유 링크 복사됨!' : '대시보드 공유하기'}
+            </button>
           )}
 
           <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 shadow-inner">
@@ -183,7 +174,7 @@ const App: React.FC = () => {
             </button>
           ) : (
             <a href={window.location.pathname} className="bg-slate-800 text-white px-8 py-3.5 rounded-2xl font-black text-sm flex items-center gap-3 transition-all active:scale-95 shadow-xl">
-              <i className="fas fa-home"></i> 내 대시보드로 가기
+              <i className="fas fa-home"></i> 내 대시보드로 돌아가기
             </a>
           )}
         </div>
@@ -191,20 +182,19 @@ const App: React.FC = () => {
 
       <main className="max-w-[1600px] mx-auto w-full px-10 py-10 space-y-10 flex-1">
         {isSharedView && (
-          <div className="bg-indigo-50 border border-indigo-100 rounded-[2rem] p-6 flex items-center justify-between shadow-sm">
+          <div className="bg-indigo-50 border border-indigo-100 rounded-[2rem] p-6 flex items-center justify-between shadow-sm border-l-8 border-l-indigo-600 animate-in slide-in-from-top duration-500">
             <div className="flex items-center gap-5">
-              <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white">
-                <i className="fas fa-lock"></i>
+              <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg">
+                <i className="fas fa-eye"></i>
               </div>
               <div>
-                <h4 className="font-black text-indigo-900 text-lg">읽기 전용 공유 모드</h4>
-                <p className="text-sm text-indigo-700/80 font-medium">이 링크를 통해 공유된 데이터를 열람하고 있습니다. 수정은 불가능합니다.</p>
+                <h4 className="font-black text-indigo-900 text-lg">열람 전용 대시보드입니다</h4>
+                <p className="text-sm text-indigo-700/80 font-medium">작성자가 공유한 실시간 데이터를 확인 중입니다. 숫자 수정은 본인용 대시보드에서만 가능합니다.</p>
               </div>
             </div>
           </div>
         )}
 
-        {/* 메인 KPI 섹션 */}
         <section className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <SummaryCard title={`${viewMode === 'monthly' ? '기간 합산' : '누적'} 매출`} value={`${formatMillions(summaryMetrics.sales)}`} subValue="단위: 백만원" icon="fa-coins" color="bg-blue-600" />
@@ -213,36 +203,11 @@ const App: React.FC = () => {
             <SummaryCard title="손익분기점 (BEP)" value={`${formatMillions(summaryMetrics.bep)}`} subValue="회수 소요 매출 (백만원)" icon="fa-scale-balanced" color="bg-rose-500" />
           </div>
 
-          {/* 비용 구조 분석 섹션 (금액 + 비율 통합 표시) */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <SummaryCard 
-              title="인건비" 
-              value={`${formatMillions(summaryMetrics.totalLabor)}`} 
-              subValue={`비율: ${formatPercent(summaryMetrics.laborRatio)} (판관+제조)`} 
-              icon="fa-users-gear" 
-              color="bg-slate-700" 
-            />
-            <SummaryCard 
-              title="경비" 
-              value={`${formatMillions(summaryMetrics.totalOH)}`} 
-              subValue={`비율: ${formatPercent(summaryMetrics.expenseRatio)} (판관+제조)`} 
-              icon="fa-wallet" 
-              color="bg-slate-700" 
-            />
-            <SummaryCard 
-              title="재료비" 
-              value={`${formatMillions(summaryMetrics.totalMaterial)}`} 
-              subValue={`비율: ${formatPercent(summaryMetrics.materialRatio)} (원재료/부재료)`} 
-              icon="fa-boxes-stacked" 
-              color="bg-slate-700" 
-            />
-            <SummaryCard 
-              title="고정비" 
-              value={`${formatMillions(summaryMetrics.totalFixedCost)}`} 
-              subValue={`고정비율: ${formatPercent(summaryMetrics.fixedCostRatio)} (인건비+경비)`} 
-              icon="fa-anchor" 
-              color="bg-amber-600" 
-            />
+            <SummaryCard title="인건비 비율" value={formatPercent(summaryMetrics.laborRatio)} subValue={`${formatMillions(summaryMetrics.totalLabor)} 백만원`} icon="fa-users-gear" color="bg-slate-700" />
+            <SummaryCard title="경비 비율" value={formatPercent(summaryMetrics.expenseRatio)} subValue={`${formatMillions(summaryMetrics.totalOH)} 백만원`} icon="fa-wallet" color="bg-slate-700" />
+            <SummaryCard title="재료비 비율" value={formatPercent(summaryMetrics.materialRatio)} subValue={`${formatMillions(summaryMetrics.totalMaterial)} 백만원`} icon="fa-boxes-stacked" color="bg-slate-700" />
+            <SummaryCard title="고정비 비율" value={formatPercent(summaryMetrics.fixedCostRatio)} subValue={`${formatMillions(summaryMetrics.totalFixedCost)} 백만원`} icon="fa-anchor" color="bg-amber-600" />
           </div>
         </section>
 
@@ -302,11 +267,9 @@ const App: React.FC = () => {
         </div>
 
         <section className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
-          <div className="px-10 py-8 border-b border-slate-50 bg-slate-50/30 flex justify-between items-end">
-            <div>
-              <h3 className="text-xl font-black text-slate-800">상세 경영 지표 현황 ({viewMode === 'monthly' ? '월별' : '누적'})</h3>
-              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">구간: {displayPeriod} | 단위: 백만원 / %</p>
-            </div>
+          <div className="px-10 py-8 border-b border-slate-50 bg-slate-50/30">
+            <h3 className="text-xl font-black text-slate-800">상세 경영 지표 현황 ({viewMode === 'monthly' ? '월별' : '누적'})</h3>
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">구간: {displayPeriod} | 단위: 백만원 / %</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -320,7 +283,6 @@ const App: React.FC = () => {
                 {[
                   { label: '영업이익 (감가전)', key: 'operatingProfit', isPct: false, color: 'text-slate-900' },
                   { label: '영업이익률', key: 'opMargin', isPct: true, color: 'text-emerald-600 font-black' },
-                  { label: '감가 반영 영업이익', key: 'opInclDepr', isPct: false, color: 'text-indigo-600' },
                   { label: '인건비율', key: 'laborRatio', isPct: true, color: 'text-slate-500' },
                   { label: '경비비율', key: 'expenseRatio', isPct: true, color: 'text-slate-500' },
                   { label: '재료비율', key: 'materialRatio', isPct: true, color: 'text-slate-500' },
