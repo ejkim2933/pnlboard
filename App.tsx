@@ -4,7 +4,7 @@ import {
   Line, ComposedChart, Area, Cell, AreaChart
 } from 'recharts';
 import { 
-  YearData, INITIAL_MONTHLY_DATA, MONTH_NAMES, CalculatedMetrics 
+  YearData, INITIAL_MONTHLY_DATA, MONTH_NAMES, MonthlyData 
 } from './types';
 import { calculateMetrics, formatCurrency, formatPercent, getCumulativeData, formatMillions } from './utils/calculations';
 import SummaryCard from './components/SummaryCard';
@@ -12,16 +12,48 @@ import DataEntryModal from './components/DataEntryModal';
 
 const STORAGE_KEY = 'pl_dashboard_pro_v2';
 
+// 데이터 압축을 위한 유틸리티 (URL 길이를 줄이기 위해 배열 형태로 변환하여 base64 인코딩)
+const encodeData = (data: YearData): string => {
+  const simplify = (list: MonthlyData[]) => list.map(m => [
+    m.sales, m.materialCost, m.adminLabor, m.mfgLabor, m.adminOH, m.mfgOH, m.depreciation
+  ]);
+  const combined = [simplify(data.target), simplify(data.actual)];
+  return btoa(encodeURIComponent(JSON.stringify(combined)));
+};
+
+const decodeData = (encoded: string): YearData | null => {
+  try {
+    const combined = JSON.parse(decodeURIComponent(atob(encoded)));
+    const restore = (list: any[]): MonthlyData[] => list.map(arr => ({
+      sales: arr[0], materialCost: arr[1], adminLabor: arr[2], mfgLabor: arr[3],
+      adminOH: arr[4], mfgOH: arr[5], depreciation: arr[6]
+    }));
+    return { target: restore(combined[0]), actual: restore(combined[1]) };
+  } catch (e) {
+    return null;
+  }
+};
+
 const App: React.FC = () => {
+  // 현재 날짜를 기준으로 기본 조회 기간 설정 (1-6월은 1H, 7-12월은 2H)
+  const currentMonth = new Date().getMonth(); 
+  const defaultPeriod = currentMonth < 6 ? '1H' : '2H';
+
   const [yearData, setYearData] = useState<YearData>(() => {
+    // 1. URL에서 공유 데이터 확인
+    const params = new URLSearchParams(window.location.search);
+    const shared = params.get('view');
+    if (shared) {
+      const decoded = decodeData(shared);
+      if (decoded) return decoded;
+    }
+
+    // 2. 없으면 로컬 스토리지 확인
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error("Failed to parse saved data", e);
-      }
+      try { return JSON.parse(saved); } catch (e) {}
     }
+
     return {
       target: Array(12).fill(0).map(() => ({ ...INITIAL_MONTHLY_DATA })),
       actual: Array(12).fill(0).map(() => ({ ...INITIAL_MONTHLY_DATA })),
@@ -30,20 +62,36 @@ const App: React.FC = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'monthly' | 'cumulative'>('monthly');
-  const [displayPeriod, setDisplayPeriod] = useState<'1H' | '2H' | 'Full'>('1H');
+  const [displayPeriod, setDisplayPeriod] = useState<'1H' | '2H' | 'Full'>(defaultPeriod);
+  const [isSharedView, setIsSharedView] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(yearData));
-  }, [yearData]);
+    const params = new URLSearchParams(window.location.search);
+    setIsSharedView(params.has('view'));
+  }, []);
 
-  // 현재 조회 기간에 해당하는 인덱스 범위 계산
+  useEffect(() => {
+    // 공유 모드가 아닐 때만 로컬 스토리지에 자동 저장
+    if (!isSharedView) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(yearData));
+    }
+  }, [yearData, isSharedView]);
+
+  const handleShare = () => {
+    const encoded = encodeData(yearData);
+    const shareUrl = `${window.location.origin}${window.location.pathname}?view=${encoded}`;
+    navigator.clipboard.writeText(shareUrl);
+    setCopySuccess(true);
+    setTimeout(() => setCopySuccess(false), 3000);
+  };
+
   const periodRange = useMemo(() => {
     if (displayPeriod === '1H') return { start: 0, end: 6 };
     if (displayPeriod === '2H') return { start: 6, end: 12 };
     return { start: 0, end: 12 };
   }, [displayPeriod]);
 
-  // 현재 뷰 모드 및 조회 기간에 따른 시각화 데이터 생성
   const dashboardData = useMemo(() => {
     const targetBase = viewMode === 'cumulative' ? getCumulativeData(yearData.target) : yearData.target;
     const actualBase = viewMode === 'cumulative' ? getCumulativeData(yearData.actual) : yearData.actual;
@@ -65,7 +113,6 @@ const App: React.FC = () => {
     return fullData.slice(periodRange.start, periodRange.end);
   }, [yearData, viewMode, periodRange]);
 
-  // 상단 요약 카드는 항상 누적(YTD) 전체 합계를 기준으로 표시
   const totalActual = useMemo(() => {
     const sum = yearData.actual.reduce((acc, curr) => ({
       sales: acc.sales + curr.sales,
@@ -77,10 +124,7 @@ const App: React.FC = () => {
       depreciation: acc.depreciation + curr.depreciation,
     }), { ...INITIAL_MONTHLY_DATA });
     
-    return {
-      ...sum,
-      ...calculateMetrics(sum)
-    };
+    return { ...sum, ...calculateMetrics(sum) };
   }, [yearData.actual]);
 
   return (
@@ -91,95 +135,97 @@ const App: React.FC = () => {
             <i className="fas fa-chart-pie text-2xl"></i>
           </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-800 tracking-tighter">손익 대시보드 PRO</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-black text-slate-800 tracking-tighter">손익 대시보드 PRO</h1>
+              {isSharedView && (
+                <span className="bg-indigo-600 text-white text-[10px] font-black px-3 py-1 rounded-full animate-pulse tracking-widest uppercase">
+                  Shared View
+                </span>
+              )}
+            </div>
             <p className="text-[10px] text-indigo-600 font-black uppercase tracking-[0.2em]">Management & Performance Insight</p>
           </div>
         </div>
 
         <div className="flex items-center gap-4">
-          {/* 조회 구간 필터 */}
+          {/* 공유 버튼 (사용자 본인일 때만 노출) */}
+          {!isSharedView && (
+            <div className="relative mr-2">
+              <button 
+                onClick={handleShare} 
+                className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-xs transition-all shadow-sm ${copySuccess ? 'bg-emerald-500 text-white' : 'bg-white text-indigo-600 border border-slate-200 hover:bg-slate-50'}`}
+              >
+                <i className={`fas ${copySuccess ? 'fa-check' : 'fa-share-nodes'}`}></i>
+                {copySuccess ? '복사 완료!' : '대시보드 공유하기'}
+              </button>
+              {copySuccess && (
+                <div className="absolute top-full left-0 right-0 mt-2 text-center text-[10px] text-emerald-600 font-bold animate-bounce">
+                  링크가 복사되었습니다!
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 shadow-inner">
-            <button 
-              onClick={() => setDisplayPeriod('1H')}
-              className={`px-4 py-2 rounded-xl text-[11px] font-black transition-all ${displayPeriod === '1H' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-            >
-              상반기 (1H)
-            </button>
-            <button 
-              onClick={() => setDisplayPeriod('2H')}
-              className={`px-4 py-2 rounded-xl text-[11px] font-black transition-all ${displayPeriod === '2H' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-            >
-              하반기 (2H)
-            </button>
-            <button 
-              onClick={() => setDisplayPeriod('Full')}
-              className={`px-4 py-2 rounded-xl text-[11px] font-black transition-all ${displayPeriod === 'Full' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-            >
-              전체 (Full)
-            </button>
+            {['1H', '2H', 'Full'].map((p) => (
+              <button 
+                key={p}
+                onClick={() => setDisplayPeriod(p as any)}
+                className={`px-4 py-2 rounded-xl text-[11px] font-black transition-all ${displayPeriod === p ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                {p === '1H' ? '상반기' : p === '2H' ? '하반기' : '전체'}
+              </button>
+            ))}
           </div>
 
           <div className="flex bg-slate-200/50 p-1.5 rounded-2xl shadow-inner border border-slate-100">
-            <button 
-              onClick={() => setViewMode('monthly')}
-              className={`px-6 py-2 rounded-xl text-xs font-black transition-all ${viewMode === 'monthly' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-indigo-400'}`}
-            >
-              당월 실적
-            </button>
-            <button 
-              onClick={() => setViewMode('cumulative')}
-              className={`px-6 py-2 rounded-xl text-xs font-black transition-all ${viewMode === 'cumulative' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-indigo-400'}`}
-            >
-              누적 실적
-            </button>
+            <button onClick={() => setViewMode('monthly')} className={`px-6 py-2 rounded-xl text-xs font-black transition-all ${viewMode === 'monthly' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-indigo-400'}`}>당월 실적</button>
+            <button onClick={() => setViewMode('cumulative')} className={`px-6 py-2 rounded-xl text-xs font-black transition-all ${viewMode === 'cumulative' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-indigo-400'}`}>누적 실적</button>
           </div>
 
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3.5 rounded-2xl font-black text-sm flex items-center gap-3 transition-all active:scale-95 shadow-xl shadow-indigo-100"
-          >
-            <i className="fas fa-edit"></i>
-            데이터 통합 관리
-          </button>
+          {!isSharedView ? (
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3.5 rounded-2xl font-black text-sm flex items-center gap-3 transition-all active:scale-95 shadow-xl shadow-indigo-100"
+            >
+              <i className="fas fa-edit"></i>
+              데이터 통합 관리
+            </button>
+          ) : (
+            <a href={window.location.pathname} className="bg-slate-800 text-white px-8 py-3.5 rounded-2xl font-black text-sm flex items-center gap-3 transition-all active:scale-95 shadow-xl">
+              <i className="fas fa-home"></i>
+              내 대시보드로 가기
+            </a>
+          )}
         </div>
       </header>
 
       <main className="max-w-[1600px] mx-auto w-full px-10 py-10 space-y-10 flex-1">
-        {/* KPI Cards (Always YTD Context) */}
+        {isSharedView && (
+          <div className="bg-indigo-50 border border-indigo-100 rounded-[2rem] p-6 flex items-center justify-between shadow-sm animate-in slide-in-from-top-4 duration-500">
+            <div className="flex items-center gap-5">
+              <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+                <i className="fas fa-lock"></i>
+              </div>
+              <div>
+                <h4 className="font-black text-indigo-900 text-lg">읽기 전용 공유 모드</h4>
+                <p className="text-sm text-indigo-700/80 font-medium">이 링크를 통해 다른 사용자가 생성한 대시보드 데이터를 열람하고 있습니다. 원본 데이터의 수정은 불가능합니다.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 요약 카드 섹션 */}
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <SummaryCard 
-            title="연간 누적 매출 (실제)" 
-            value={`${formatMillions(totalActual.sales)}`}
-            subValue="단위: 백만원"
-            icon="fa-coins"
-            color="bg-blue-600"
-          />
-          <SummaryCard 
-            title="누적 영업이익 (감가전)" 
-            value={`${formatMillions(totalActual.operatingProfit)}`}
-            subValue={`이익률: ${formatPercent(totalActual.opMargin)} (백만원)`}
-            icon="fa-bolt"
-            color="bg-emerald-500"
-          />
-          <SummaryCard 
-            title="감가 반영 누적 이익" 
-            value={`${formatMillions(totalActual.opInclDepr)}`}
-            subValue={`반영 이익률: ${formatPercent(totalActual.opMarginInclDepr)} (백만원)`}
-            icon="fa-calculator"
-            color="bg-indigo-600"
-          />
-          <SummaryCard 
-            title="손익분기점 (YTD BEP)" 
-            value={`${formatMillions(totalActual.bep)}`}
-            subValue="회수 소요 매출 (단위: 백만원)"
-            icon="fa-scale-balanced"
-            color="bg-rose-500"
-          />
+          <SummaryCard title="연간 누적 매출 (실제)" value={`${formatMillions(totalActual.sales)}`} subValue="단위: 백만원" icon="fa-coins" color="bg-blue-600" />
+          <SummaryCard title="누적 영업이익 (감가전)" value={`${formatMillions(totalActual.operatingProfit)}`} subValue={`이익률: ${formatPercent(totalActual.opMargin)} (백만원)`} icon="fa-bolt" color="bg-emerald-500" />
+          <SummaryCard title="감가 반영 누적 이익" value={`${formatMillions(totalActual.opInclDepr)}`} subValue={`반영 이익률: ${formatPercent(totalActual.opMarginInclDepr)} (백만원)`} icon="fa-calculator" color="bg-indigo-600" />
+          <SummaryCard title="손익분기점 (YTD BEP)" value={`${formatMillions(totalActual.bep)}`} subValue="회수 소요 매출 (단위: 백만원)" icon="fa-scale-balanced" color="bg-rose-500" />
         </section>
 
-        {/* Charts Section */}
+        {/* 차트 섹션 */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-          {/* Main Chart: Sales vs BEP */}
+          {/* 차트 1: 매출 vs BEP */}
           <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col">
             <div className="mb-8 flex justify-between items-start">
               <div>
@@ -187,13 +233,8 @@ const App: React.FC = () => {
                   <span className="w-1.5 h-6 bg-blue-500 rounded-full"></span>
                   매출 목표 vs 실적 및 손익분기 ({viewMode === 'monthly' ? '월별' : '누적'})
                 </h3>
-                <p className="text-sm text-slate-400 font-medium mt-1 ml-4 text-xs">
-                  구간: {displayPeriod === '1H' ? '상반기 (1-6월)' : displayPeriod === '2H' ? '하반기 (7-12월)' : '전체 (1-12월)'} | 단위: 백만원
-                </p>
+                <p className="text-sm text-slate-400 font-medium mt-1 ml-4 text-xs">구간: {displayPeriod === '1H' ? '상반기 (1-6월)' : displayPeriod === '2H' ? '하반기 (7-12월)' : '전체 (1-12월)'} | 단위: 백만원</p>
               </div>
-              <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${viewMode === 'monthly' ? 'bg-indigo-50 text-indigo-500' : 'bg-emerald-50 text-emerald-500'}`}>
-                {viewMode} View
-              </span>
             </div>
             <div className="h-[400px] w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -201,16 +242,11 @@ const App: React.FC = () => {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11, fontWeight: 700}} dy={10} />
                   <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11}} tickFormatter={(val) => formatMillions(val)} />
-                  <Tooltip 
-                    contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', padding: '16px'}}
-                    formatter={(val: number) => formatMillions(val) + ' 백만원'}
-                  />
+                  <Tooltip contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', padding: '16px'}} formatter={(val: number) => formatMillions(val) + ' 백만원'} />
                   <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{paddingBottom: '30px'}} />
                   <Bar dataKey="targetSales" name="목표 매출" fill="#e2e8f0" radius={[10, 10, 0, 0]} barSize={20} />
                   <Bar dataKey="actualSales" name="실제 매출" radius={[10, 10, 0, 0]} barSize={20}>
-                    {dashboardData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.actualSales >= entry.targetSales ? '#4f46e5' : '#94a3b8'} />
-                    ))}
+                    {dashboardData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.actualSales >= entry.targetSales ? '#4f46e5' : '#94a3b8'} />)}
                   </Bar>
                   <Line type="monotone" dataKey="actualBEP" name="BEP (실제)" stroke="#f43f5e" strokeWidth={4} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6 }} />
                 </ComposedChart>
@@ -218,29 +254,21 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Profitability Chart */}
+          {/* 차트 2: 수익성 추이 */}
           <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col">
             <div className="mb-8">
               <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
                 <span className="w-1.5 h-6 bg-emerald-500 rounded-full"></span>
                 영업이익 및 수익성 추이 ({viewMode === 'monthly' ? '월별' : '누적'})
               </h3>
-              <p className="text-sm text-slate-400 font-medium mt-1 ml-4 text-xs">
-                구간: {displayPeriod === '1H' ? '상반기 (1-6월)' : displayPeriod === '2H' ? '하반기 (7-12월)' : '전체 (1-12월)'} | 단위: 백만원
-              </p>
+              <p className="text-sm text-slate-400 font-medium mt-1 ml-4 text-xs">구간: {displayPeriod === '1H' ? '상반기 (1-6월)' : displayPeriod === '2H' ? '하반기 (7-12월)' : '전체 (1-12월)'} | 단위: 백만원</p>
             </div>
             <div className="h-[400px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={dashboardData} margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
                   <defs>
-                    <linearGradient id="colorOP" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorDepr" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2}/>
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                    </linearGradient>
+                    <linearGradient id="colorOP" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
+                    <linearGradient id="colorDepr" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#6366f1" stopOpacity={0.2}/><stop offset="95%" stopColor="#6366f1" stopOpacity={0}/></linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 11, fontWeight: 700}} dy={10} />
@@ -255,29 +283,21 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Detailed Table */}
+        {/* 상세 테이블 섹션 */}
         <section className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
           <div className="px-10 py-8 border-b border-slate-50 bg-slate-50/30 flex justify-between items-end">
             <div>
               <h3 className="text-xl font-black text-slate-800">상세 경영 지표 현황 ({viewMode === 'monthly' ? '월별' : '누적'})</h3>
-              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
-                구간: {displayPeriod === '1H' ? '상반기' : displayPeriod === '2H' ? '하반기' : '전체'} | 단위: 백만원 / %
-              </p>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">구간: {displayPeriod === '1H' ? '상반기' : displayPeriod === '2H' ? '하반기' : '전체'} | 단위: 백만원 / %</p>
             </div>
-            <div className="text-right">
-                <span className="text-[10px] font-black text-slate-400 bg-white border border-slate-200 px-4 py-2 rounded-xl shadow-sm">
-                  {viewMode === 'monthly' ? '각 월의 독립적인 수치입니다' : '1월부터 누적 합산된 수치입니다'}
-                </span>
-            </div>
+            <span className="text-[10px] font-black text-slate-400 bg-white border border-slate-200 px-4 py-2 rounded-xl shadow-sm">{viewMode === 'monthly' ? '각 월의 독립적인 수치입니다' : '1월부터 누적 합산된 수치입니다'}</span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-white text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
                   <th className="px-10 py-6 sticky left-0 bg-white z-10 w-[240px] shadow-[1px_0_0_#f1f5f9]">구분 지표</th>
-                  {MONTH_NAMES.slice(periodRange.start, periodRange.end).map(m => (
-                    <th key={m} className="px-6 py-6 text-right">{m}</th>
-                  ))}
+                  {MONTH_NAMES.slice(periodRange.start, periodRange.end).map(m => <th key={m} className="px-6 py-6 text-right">{m}</th>)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -293,17 +313,10 @@ const App: React.FC = () => {
                   { label: '손익분기점(BEP)', key: 'bep', isPct: false, color: 'text-rose-500 font-bold' },
                 ].map((row, idx) => (
                   <tr key={idx} className="hover:bg-slate-50 transition-colors group">
-                    <td className="px-10 py-5 font-extrabold text-slate-700 sticky left-0 bg-white z-10 shadow-[1px_0_0_#f1f5f9] group-hover:bg-slate-50">
-                      {row.label}
-                    </td>
+                    <td className="px-10 py-5 font-extrabold text-slate-700 sticky left-0 bg-white z-10 shadow-[1px_0_0_#f1f5f9] group-hover:bg-slate-50">{row.label}</td>
                     {dashboardData.map((d, dIdx) => {
                       const val = d[row.key as keyof typeof d] as number;
-                      const isNegative = val < 0;
-                      return (
-                        <td key={dIdx} className={`px-6 py-5 text-right whitespace-nowrap text-sm ${isNegative ? 'text-rose-500 font-bold' : row.color}`}>
-                          {row.isPct ? formatPercent(val) : formatMillions(val)}
-                        </td>
-                      );
+                      return <td key={dIdx} className={`px-6 py-5 text-right whitespace-nowrap text-sm ${val < 0 ? 'text-rose-500 font-bold' : row.color}`}>{row.isPct ? formatPercent(val) : formatMillions(val)}</td>;
                     })}
                   </tr>
                 ))}
@@ -313,16 +326,12 @@ const App: React.FC = () => {
         </section>
       </main>
 
-      <footer className="px-10 py-8 text-center text-slate-300 text-xs font-bold border-t border-slate-100">
-        &copy; 2024 Corporate P&L Dashboard Pro. All Financial Data Secured Locally.
-      </footer>
+      <footer className="px-10 py-8 text-center text-slate-300 text-xs font-bold border-t border-slate-100">&copy; 2024 Corporate P&L Dashboard Pro. All Financial Data Secured Locally.</footer>
 
-      <DataEntryModal 
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        yearData={yearData}
-        onSave={(data) => setYearData(data)}
-      />
+      {/* 데이터 입력 모달 (공유 모드일 때는 렌더링되지 않음) */}
+      {!isSharedView && (
+        <DataEntryModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} yearData={yearData} onSave={(data) => setYearData(data)} />
+      )}
     </div>
   );
 };
