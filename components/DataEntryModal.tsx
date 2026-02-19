@@ -1,6 +1,5 @@
-
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { YearData, DataType, MONTH_NAMES, MonthlyData } from '../types.ts';
+import { YearData, DataType, MONTH_NAMES, MonthlyData } from '../types';
 
 interface DataEntryModalProps {
   isOpen: boolean;

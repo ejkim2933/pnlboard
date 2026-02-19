@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
@@ -6,10 +5,10 @@ import {
 } from 'recharts';
 import { 
   YearData, INITIAL_MONTHLY_DATA, MONTH_NAMES, MonthlyData 
-} from './types.ts';
-import { calculateMetrics, formatCurrency, formatPercent, getCumulativeData, formatMillions } from './utils/calculations.ts';
-import SummaryCard from './components/SummaryCard.tsx';
-import DataEntryModal from './components/DataEntryModal.tsx';
+} from './types';
+import { calculateMetrics, formatCurrency, formatPercent, getCumulativeData, formatMillions } from './utils/calculations';
+import SummaryCard from './components/SummaryCard';
+import DataEntryModal from './components/DataEntryModal';
 
 const STORAGE_KEY = 'pl_dashboard_pro_v2';
 
