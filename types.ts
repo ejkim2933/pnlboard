@@ -21,8 +21,14 @@ export interface CalculatedMetrics {
   materialRatio: number;       // 재료비율
   laborRatio: number;          // 인건비율
   expenseRatio: number;        // 경비비율
+  fixedCostRatio: number;      // 고정비율 (인건비 + 경비)
   marginalProfitRatio: number; // 한계이익률
   bep: number;                 // BEP (손익분기점 매출)
+  // 합계 금액 필드 추가
+  totalLabor: number;          // 인건비 합계
+  totalOH: number;             // 경비 합계
+  totalMaterial: number;       // 재료비 합계
+  totalFixedCost: number;      // 고정비 합계 (인건비 + 경비)
 }
 
 export const MONTH_NAMES = [

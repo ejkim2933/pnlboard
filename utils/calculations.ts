@@ -7,6 +7,8 @@ export const calculateMetrics = (data: MonthlyData): CalculatedMetrics => {
 
   const totalLabor = adminLabor + mfgLabor;
   const totalOH = adminOH + mfgOH;
+  const totalMaterial = materialCost;
+  const totalFixedCost = totalLabor + totalOH;
   
   // 1. 영업이익 (감가 전): 매출액 - (재료비 + 인건비 합계 + 경비 합계)
   const operatingProfit = sales - (materialCost + totalLabor + totalOH);
@@ -17,9 +19,12 @@ export const calculateMetrics = (data: MonthlyData): CalculatedMetrics => {
   const opMarginInclDepr = sales > 0 ? (opInclDepr / sales) * 100 : 0;
 
   // 3. 비율 지표들
-  const materialRatio = sales > 0 ? (materialCost / sales) * 100 : 0;
+  const materialRatio = sales > 0 ? (totalMaterial / sales) * 100 : 0;
   const laborRatio = sales > 0 ? (totalLabor / sales) * 100 : 0;
   const expenseRatio = sales > 0 ? (totalOH / sales) * 100 : 0;
+  
+  // 고정비율 (사용자 정의: 인건비 + 경비)
+  const fixedCostRatio = sales > 0 ? (totalFixedCost / sales) * 100 : 0;
 
   // 4. 한계이익률 = (매출 - 변동비[재료비]) / 매출
   const marginalProfit = sales - materialCost;
@@ -27,7 +32,7 @@ export const calculateMetrics = (data: MonthlyData): CalculatedMetrics => {
 
   // 5. 손익분기점 (BEP)
   // 고정비 = 인건비 + 경비 + 감가상각비
-  const fixedCosts = totalLabor + totalOH + depreciation;
+  const fixedCosts = totalFixedCost + depreciation;
   const bep = marginalProfitRatio > 0 ? fixedCosts / (marginalProfitRatio / 100) : 0;
 
   return {
@@ -38,8 +43,13 @@ export const calculateMetrics = (data: MonthlyData): CalculatedMetrics => {
     materialRatio,
     laborRatio,
     expenseRatio,
+    fixedCostRatio,
     marginalProfitRatio,
-    bep
+    bep,
+    totalLabor,
+    totalOH,
+    totalMaterial,
+    totalFixedCost
   };
 };
 

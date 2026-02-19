@@ -12,7 +12,7 @@ import DataEntryModal from './components/DataEntryModal';
 
 const STORAGE_KEY = 'pl_dashboard_pro_v2';
 
-// 데이터 압축을 위한 유틸리티 (URL 길이를 줄이기 위해 배열 형태로 변환하여 base64 인코딩)
+// 데이터 압축을 위한 유틸리티
 const encodeData = (data: YearData): string => {
   const simplify = (list: MonthlyData[]) => list.map(m => [
     m.sales, m.materialCost, m.adminLabor, m.mfgLabor, m.adminOH, m.mfgOH, m.depreciation
@@ -35,25 +35,20 @@ const decodeData = (encoded: string): YearData | null => {
 };
 
 const App: React.FC = () => {
-  // 현재 날짜를 기준으로 기본 조회 기간 설정 (1-6월은 1H, 7-12월은 2H)
   const currentMonth = new Date().getMonth(); 
   const defaultPeriod = currentMonth < 6 ? '1H' : '2H';
 
   const [yearData, setYearData] = useState<YearData>(() => {
-    // 1. URL에서 공유 데이터 확인
     const params = new URLSearchParams(window.location.search);
     const shared = params.get('view');
     if (shared) {
       const decoded = decodeData(shared);
       if (decoded) return decoded;
     }
-
-    // 2. 없으면 로컬 스토리지 확인
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try { return JSON.parse(saved); } catch (e) {}
     }
-
     return {
       target: Array(12).fill(0).map(() => ({ ...INITIAL_MONTHLY_DATA })),
       actual: Array(12).fill(0).map(() => ({ ...INITIAL_MONTHLY_DATA })),
@@ -72,7 +67,6 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // 공유 모드가 아닐 때만 로컬 스토리지에 자동 저장
     if (!isSharedView) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(yearData));
     }
@@ -92,6 +86,7 @@ const App: React.FC = () => {
     return { start: 0, end: 12 };
   }, [displayPeriod]);
 
+  // 메인 차트 및 테이블용 데이터
   const dashboardData = useMemo(() => {
     const targetBase = viewMode === 'cumulative' ? getCumulativeData(yearData.target) : yearData.target;
     const actualBase = viewMode === 'cumulative' ? getCumulativeData(yearData.actual) : yearData.actual;
@@ -113,8 +108,17 @@ const App: React.FC = () => {
     return fullData.slice(periodRange.start, periodRange.end);
   }, [yearData, viewMode, periodRange]);
 
-  const totalActual = useMemo(() => {
-    const sum = yearData.actual.reduce((acc, curr) => ({
+  // 상단 요약 배너용 데이터
+  const summaryMetrics = useMemo(() => {
+    if (viewMode === 'cumulative') {
+      const ytdData = getCumulativeData(yearData.actual);
+      const lastMonthIdx = Math.min(periodRange.end - 1, ytdData.length - 1);
+      const lastMonthYtd = ytdData[lastMonthIdx];
+      return { ...lastMonthYtd, ...calculateMetrics(lastMonthYtd) };
+    }
+
+    const relevantActual = yearData.actual.slice(periodRange.start, periodRange.end);
+    const sum = relevantActual.reduce((acc, curr) => ({
       sales: acc.sales + curr.sales,
       materialCost: acc.materialCost + curr.materialCost,
       adminLabor: acc.adminLabor + curr.adminLabor,
@@ -125,7 +129,7 @@ const App: React.FC = () => {
     }), { ...INITIAL_MONTHLY_DATA });
     
     return { ...sum, ...calculateMetrics(sum) };
-  }, [yearData.actual]);
+  }, [yearData.actual, viewMode, periodRange]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -148,7 +152,6 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-4">
-          {/* 공유 버튼 (사용자 본인일 때만 노출) */}
           {!isSharedView && (
             <div className="relative mr-2">
               <button 
@@ -158,21 +161,12 @@ const App: React.FC = () => {
                 <i className={`fas ${copySuccess ? 'fa-check' : 'fa-share-nodes'}`}></i>
                 {copySuccess ? '복사 완료!' : '대시보드 공유하기'}
               </button>
-              {copySuccess && (
-                <div className="absolute top-full left-0 right-0 mt-2 text-center text-[10px] text-emerald-600 font-bold animate-bounce">
-                  링크가 복사되었습니다!
-                </div>
-              )}
             </div>
           )}
 
           <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 shadow-inner">
             {['1H', '2H', 'Full'].map((p) => (
-              <button 
-                key={p}
-                onClick={() => setDisplayPeriod(p as any)}
-                className={`px-4 py-2 rounded-xl text-[11px] font-black transition-all ${displayPeriod === p ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-              >
+              <button key={p} onClick={() => setDisplayPeriod(p as any)} className={`px-4 py-2 rounded-xl text-[11px] font-black transition-all ${displayPeriod === p ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
                 {p === '1H' ? '상반기' : p === '2H' ? '하반기' : '전체'}
               </button>
             ))}
@@ -184,17 +178,12 @@ const App: React.FC = () => {
           </div>
 
           {!isSharedView ? (
-            <button 
-              onClick={() => setIsModalOpen(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3.5 rounded-2xl font-black text-sm flex items-center gap-3 transition-all active:scale-95 shadow-xl shadow-indigo-100"
-            >
-              <i className="fas fa-edit"></i>
-              데이터 통합 관리
+            <button onClick={() => setIsModalOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3.5 rounded-2xl font-black text-sm flex items-center gap-3 transition-all active:scale-95 shadow-xl shadow-indigo-100">
+              <i className="fas fa-edit"></i> 데이터 통합 관리
             </button>
           ) : (
             <a href={window.location.pathname} className="bg-slate-800 text-white px-8 py-3.5 rounded-2xl font-black text-sm flex items-center gap-3 transition-all active:scale-95 shadow-xl">
-              <i className="fas fa-home"></i>
-              내 대시보드로 가기
+              <i className="fas fa-home"></i> 내 대시보드로 가기
             </a>
           )}
         </div>
@@ -202,39 +191,69 @@ const App: React.FC = () => {
 
       <main className="max-w-[1600px] mx-auto w-full px-10 py-10 space-y-10 flex-1">
         {isSharedView && (
-          <div className="bg-indigo-50 border border-indigo-100 rounded-[2rem] p-6 flex items-center justify-between shadow-sm animate-in slide-in-from-top-4 duration-500">
+          <div className="bg-indigo-50 border border-indigo-100 rounded-[2rem] p-6 flex items-center justify-between shadow-sm">
             <div className="flex items-center gap-5">
-              <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+              <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white">
                 <i className="fas fa-lock"></i>
               </div>
               <div>
                 <h4 className="font-black text-indigo-900 text-lg">읽기 전용 공유 모드</h4>
-                <p className="text-sm text-indigo-700/80 font-medium">이 링크를 통해 다른 사용자가 생성한 대시보드 데이터를 열람하고 있습니다. 원본 데이터의 수정은 불가능합니다.</p>
+                <p className="text-sm text-indigo-700/80 font-medium">이 링크를 통해 공유된 데이터를 열람하고 있습니다. 수정은 불가능합니다.</p>
               </div>
             </div>
           </div>
         )}
 
-        {/* 요약 카드 섹션 */}
-        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <SummaryCard title="연간 누적 매출 (실제)" value={`${formatMillions(totalActual.sales)}`} subValue="단위: 백만원" icon="fa-coins" color="bg-blue-600" />
-          <SummaryCard title="누적 영업이익 (감가전)" value={`${formatMillions(totalActual.operatingProfit)}`} subValue={`이익률: ${formatPercent(totalActual.opMargin)} (백만원)`} icon="fa-bolt" color="bg-emerald-500" />
-          <SummaryCard title="감가 반영 누적 이익" value={`${formatMillions(totalActual.opInclDepr)}`} subValue={`반영 이익률: ${formatPercent(totalActual.opMarginInclDepr)} (백만원)`} icon="fa-calculator" color="bg-indigo-600" />
-          <SummaryCard title="손익분기점 (YTD BEP)" value={`${formatMillions(totalActual.bep)}`} subValue="회수 소요 매출 (단위: 백만원)" icon="fa-scale-balanced" color="bg-rose-500" />
+        {/* 메인 KPI 섹션 */}
+        <section className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <SummaryCard title={`${viewMode === 'monthly' ? '기간 합산' : '누적'} 매출`} value={`${formatMillions(summaryMetrics.sales)}`} subValue="단위: 백만원" icon="fa-coins" color="bg-blue-600" />
+            <SummaryCard title="영업이익 (감가전)" value={`${formatMillions(summaryMetrics.operatingProfit)}`} subValue={`이익률: ${formatPercent(summaryMetrics.opMargin)}`} icon="fa-bolt" color="bg-emerald-500" />
+            <SummaryCard title="감가 반영 이익" value={`${formatMillions(summaryMetrics.opInclDepr)}`} subValue={`반영 이익률: ${formatPercent(summaryMetrics.opMarginInclDepr)}`} icon="fa-calculator" color="bg-indigo-600" />
+            <SummaryCard title="손익분기점 (BEP)" value={`${formatMillions(summaryMetrics.bep)}`} subValue="회수 소요 매출 (백만원)" icon="fa-scale-balanced" color="bg-rose-500" />
+          </div>
+
+          {/* 비용 구조 분석 섹션 (금액 + 비율 통합 표시) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <SummaryCard 
+              title="인건비" 
+              value={`${formatMillions(summaryMetrics.totalLabor)}`} 
+              subValue={`비율: ${formatPercent(summaryMetrics.laborRatio)} (판관+제조)`} 
+              icon="fa-users-gear" 
+              color="bg-slate-700" 
+            />
+            <SummaryCard 
+              title="경비" 
+              value={`${formatMillions(summaryMetrics.totalOH)}`} 
+              subValue={`비율: ${formatPercent(summaryMetrics.expenseRatio)} (판관+제조)`} 
+              icon="fa-wallet" 
+              color="bg-slate-700" 
+            />
+            <SummaryCard 
+              title="재료비" 
+              value={`${formatMillions(summaryMetrics.totalMaterial)}`} 
+              subValue={`비율: ${formatPercent(summaryMetrics.materialRatio)} (원재료/부재료)`} 
+              icon="fa-boxes-stacked" 
+              color="bg-slate-700" 
+            />
+            <SummaryCard 
+              title="고정비" 
+              value={`${formatMillions(summaryMetrics.totalFixedCost)}`} 
+              subValue={`고정비율: ${formatPercent(summaryMetrics.fixedCostRatio)} (인건비+경비)`} 
+              icon="fa-anchor" 
+              color="bg-amber-600" 
+            />
+          </div>
         </section>
 
-        {/* 차트 섹션 */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-          {/* 차트 1: 매출 vs BEP */}
           <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col">
-            <div className="mb-8 flex justify-between items-start">
-              <div>
-                <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
-                  <span className="w-1.5 h-6 bg-blue-500 rounded-full"></span>
-                  매출 목표 vs 실적 및 손익분기 ({viewMode === 'monthly' ? '월별' : '누적'})
-                </h3>
-                <p className="text-sm text-slate-400 font-medium mt-1 ml-4 text-xs">구간: {displayPeriod === '1H' ? '상반기 (1-6월)' : displayPeriod === '2H' ? '하반기 (7-12월)' : '전체 (1-12월)'} | 단위: 백만원</p>
-              </div>
+            <div className="mb-8">
+              <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
+                <span className="w-1.5 h-6 bg-blue-500 rounded-full"></span>
+                매출 목표 vs 실적 및 손익분기 ({viewMode === 'monthly' ? '월별' : '누적'})
+              </h3>
+              <p className="text-sm text-slate-400 font-medium mt-1 ml-4 text-xs">구간: {displayPeriod} | 단위: 백만원</p>
             </div>
             <div className="h-[400px] w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -254,14 +273,13 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* 차트 2: 수익성 추이 */}
           <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col">
             <div className="mb-8">
               <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
                 <span className="w-1.5 h-6 bg-emerald-500 rounded-full"></span>
                 영업이익 및 수익성 추이 ({viewMode === 'monthly' ? '월별' : '누적'})
               </h3>
-              <p className="text-sm text-slate-400 font-medium mt-1 ml-4 text-xs">구간: {displayPeriod === '1H' ? '상반기 (1-6월)' : displayPeriod === '2H' ? '하반기 (7-12월)' : '전체 (1-12월)'} | 단위: 백만원</p>
+              <p className="text-sm text-slate-400 font-medium mt-1 ml-4 text-xs">구간: {displayPeriod} | 단위: 백만원</p>
             </div>
             <div className="h-[400px] w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -283,14 +301,12 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* 상세 테이블 섹션 */}
         <section className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
           <div className="px-10 py-8 border-b border-slate-50 bg-slate-50/30 flex justify-between items-end">
             <div>
               <h3 className="text-xl font-black text-slate-800">상세 경영 지표 현황 ({viewMode === 'monthly' ? '월별' : '누적'})</h3>
-              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">구간: {displayPeriod === '1H' ? '상반기' : displayPeriod === '2H' ? '하반기' : '전체'} | 단위: 백만원 / %</p>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">구간: {displayPeriod} | 단위: 백만원 / %</p>
             </div>
-            <span className="text-[10px] font-black text-slate-400 bg-white border border-slate-200 px-4 py-2 rounded-xl shadow-sm">{viewMode === 'monthly' ? '각 월의 독립적인 수치입니다' : '1월부터 누적 합산된 수치입니다'}</span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -305,10 +321,10 @@ const App: React.FC = () => {
                   { label: '영업이익 (감가전)', key: 'operatingProfit', isPct: false, color: 'text-slate-900' },
                   { label: '영업이익률', key: 'opMargin', isPct: true, color: 'text-emerald-600 font-black' },
                   { label: '감가 반영 영업이익', key: 'opInclDepr', isPct: false, color: 'text-indigo-600' },
-                  { label: '감가 반영 이익률', key: 'opMarginInclDepr', isPct: true, color: 'text-indigo-600 font-black' },
-                  { label: '재료비율', key: 'materialRatio', isPct: true, color: 'text-slate-500' },
                   { label: '인건비율', key: 'laborRatio', isPct: true, color: 'text-slate-500' },
                   { label: '경비비율', key: 'expenseRatio', isPct: true, color: 'text-slate-500' },
+                  { label: '재료비율', key: 'materialRatio', isPct: true, color: 'text-slate-500' },
+                  { label: '고정비율 (인건비+경비)', key: 'fixedCostRatio', isPct: true, color: 'text-amber-600 font-black' },
                   { label: '한계이익률', key: 'marginalProfitRatio', isPct: true, color: 'text-blue-600 font-bold' },
                   { label: '손익분기점(BEP)', key: 'bep', isPct: false, color: 'text-rose-500 font-bold' },
                 ].map((row, idx) => (
@@ -326,9 +342,8 @@ const App: React.FC = () => {
         </section>
       </main>
 
-      <footer className="px-10 py-8 text-center text-slate-300 text-xs font-bold border-t border-slate-100">&copy; 2024 Corporate P&L Dashboard Pro. All Financial Data Secured Locally.</footer>
+      <footer className="px-10 py-8 text-center text-slate-300 text-xs font-bold border-t border-slate-100">&copy; 2024 Corporate P&L Dashboard Pro.</footer>
 
-      {/* 데이터 입력 모달 (공유 모드일 때는 렌더링되지 않음) */}
       {!isSharedView && (
         <DataEntryModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} yearData={yearData} onSave={(data) => setYearData(data)} />
       )}
