@@ -1,4 +1,5 @@
-import { MonthlyData, CalculatedMetrics } from '../types';
+
+import { MonthlyData, CalculatedMetrics } from '../types.ts';
 
 export const calculateMetrics = (data: MonthlyData): CalculatedMetrics => {
   const { 
