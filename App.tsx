@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
@@ -151,7 +152,7 @@ const App: React.FC = () => {
               className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-xs transition-all shadow-sm ${copySuccess ? 'bg-emerald-500 text-white' : 'bg-white text-indigo-600 border border-slate-200 hover:bg-slate-50'}`}
             >
               <i className={`fas ${copySuccess ? 'fa-check' : 'fa-share-nodes'}`}></i>
-              {copySuccess ? '공유 링크 복사됨!' : '대시보드 공유하기'}
+              {copySuccess ? '공유 링크 복사됨!' : '공유하기'}
             </button>
           )}
 
